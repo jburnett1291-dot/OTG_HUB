@@ -2,163 +2,168 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 from pathlib import Path
-import os
 
-# 1. THEME, BORDER-KILL, & OTG BRANDING
+# 1. UI & NO-SCROLL CSS
 st.set_page_config(page_title="OTG STAT HUB", page_icon="🏀", layout="wide")
 
 st.markdown("""
     <style>
-    /* REMOVE ALL BORDERS, PADDING, AND TOOLBARS FOR SEAMLESS WEBSITE EMBEDDING */
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
-    header {visibility: hidden;}
-    div[data-testid="stToolbar"] {visibility: hidden;}
-    [data-testid="stStatusWidget"] {display: none;}
+    #MainMenu {visibility: hidden;} footer {visibility: hidden;} header {visibility: hidden;}
+    div[data-testid="stToolbar"] {visibility: hidden;} [data-testid="stStatusWidget"] {display: none;}
     
-    /* Edge-to-Edge Content */
+    /* Force height and prevent scroll on splash */
     .block-container { padding: 0rem !important; margin: 0rem !important; }
+    .stApp { background: radial-gradient(circle, #1b1f24 0%, #0e1117 100%); color: white; }
     
-    /* OTG RED & BLACK THEME */
-    .stApp { background: radial-gradient(circle, #1b1f24 0%, #0e1117 100%); color: white; bottom: 0; }
-    
-    .centered-splash { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; height: 50vh; width: 100%; }
-    
-    [data-testid="stMetric"] { 
-        background: rgba(255, 255, 255, 0.03) !important; 
-        backdrop-filter: blur(10px); 
-        border-left: 6px solid #ff4b4b !important; 
-        border-radius: 12px !important; padding: 22px !important; 
+    /* Perfect Splash Centering */
+    .splash-container {
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        height: 92vh; width: 100%; text-align: center; overflow: hidden;
     }
     
-    .header-banner { padding: 20px; text-align: center; background: #ff4b4b; border-bottom: 5px solid white; color: white; font-family: 'Arial Black'; font-size: 28px; }
+    [data-testid="stMetric"] { background: rgba(255, 255, 255, 0.03) !important; border-left: 6px solid #ff4b4b !important; border-radius: 12px !important; padding: 22px !important; }
+    .header-banner { padding: 15px; text-align: center; background: #ff4b4b; border-bottom: 5px solid white; color: white; font-family: 'Arial Black'; font-size: 24px; }
     
-    /* TICKER STYLING */
+    /* Ticker */
     @keyframes ticker { 0% { transform: translateX(100%); } 100% { transform: translateX(-100%); } }
-    .ticker-wrap { width: 100%; overflow: hidden; background: #161b22; color: #ff4b4b; padding: 12px 0; font-family: 'Arial Black'; border-bottom: 2px solid #ff4b4b; }
-    .ticker-content { display: inline-block; white-space: nowrap; animation: ticker 40s linear infinite; }
-    .ticker-item { display: inline-block; margin-right: 80px; font-size: 20px; }
+    .ticker-wrap { width: 100%; overflow: hidden; background: #161b22; color: #ff4b4b; padding: 10px 0; font-family: 'Arial Black'; border-bottom: 2px solid #ff4b4b; }
+    .ticker-content { display: inline-block; white-space: nowrap; animation: ticker 60s linear infinite; }
+    .ticker-item { display: inline-block; margin-right: 80px; font-size: 18px; }
     </style>
     """, unsafe_allow_html=True)
 
-# 2. LOGO RECOVERY (logo.png)
-current_dir = Path(__file__).parent if "__file__" in locals() else Path.cwd()
-logo_path = current_dir / "logo.png"
-
-# 3. SPLASH SCREEN SESSIONS
-if 'otg_active' not in st.session_state:
-    st.session_state.otg_active = False
-
-if not st.session_state.otg_active:
-    st.markdown('<div class="centered-splash">', unsafe_allow_html=True)
-    if logo_path.exists():
-        st.image(str(logo_path), width=350)
-    st.markdown("<h1 style='font-size: 80px; margin-bottom: 0px;'>OTG STAT HUB</h1>", unsafe_allow_html=True)
-    st.markdown("<h3 style='color: #ff4b4b; letter-spacing: 5px; margin-top: 0px;'>OFFICIAL BROADCAST TERMINAL</h3>", unsafe_allow_html=True)
-    l, c, r = st.columns([1, 1, 1])
-    with c:
-        if st.button("ENTER OTG HUB", use_container_width=True):
-            st.session_state.otg_active = True
-            st.rerun()
-    st.markdown('</div>', unsafe_allow_html=True)
-    st.stop()
-
-# 4. DATA ENGINE (OTG SPECIFIC)
+# 2. DATA ENGINE (ROBUST OTG LOGIC)
 SHEET_ID = "1-CMiwe8UV0bHE1IR_z8zvg_kE2JfMnsfwB_lBc0rsk0"
 URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv"
 
 @st.cache_data(ttl=60)
 def load_data():
     try:
-        data = pd.read_csv(URL)
-        data.columns = data.columns.str.strip()
-        name_col, type_col, team_col = 'Player/Team', 'Type', 'Team Name'
+        df = pd.read_csv(URL)
+        df.columns = df.columns.str.strip()
         
-        # Robust numeric conversion to prevent crashes
-        stats_cols = ['PTS', 'REB', 'AST', 'STL', 'BLK', 'FGA', 'Game_ID']
-        for col in stats_cols:
-            if col in data.columns:
-                data[col] = pd.to_numeric(data[col], errors='coerce').fillna(0)
+        # Numeric Safety
+        core_cols = ['PTS', 'REB', 'AST', 'STL', 'BLK', 'FGA', 'Game_ID', 'Win']
+        for c in core_cols:
+            if c in df.columns:
+                df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0)
+            else:
+                df[c] = 0
         
-        # OTG PIE Calculation
-        data['PIE'] = (data['PTS'] + data['REB'] + data['AST'] + data['STL'] + data['BLK']) - (data['FGA'] * 0.5)
+        df['PIE'] = (df['PTS'] + df['REB'] + df['AST'] + df['STL'] + df['BLK']) - (df.get('FGA', 0) * 0.5)
         
-        df_p = data[data[type_col].str.lower() == 'player'].copy()
-        df_t = data[data[type_col].str.lower() == 'team'].copy()
+        df_p = df[df['Type'].str.lower() == 'player'].copy()
+        df_t = df[df['Type'].str.lower() == 'team'].copy()
         
-        # Calculate Per Game Averages
-        gp = df_p.groupby(name_col)['Game_ID'].nunique().reset_index(name='GP')
-        p_totals = df_p.groupby([name_col, team_col]).sum(numeric_only=True).reset_index()
-        p_avg = pd.merge(p_totals, gp, on=name_col)
-        
+        # Player Stats
+        gp = df_p.groupby('Player/Team')['Game_ID'].nunique().reset_index(name='GP')
+        p_avg = pd.merge(df_p.groupby(['Player/Team', 'Team Name']).sum(numeric_only=True).reset_index(), gp, on='Player/Team')
         for s in ['PTS', 'REB', 'AST', 'STL', 'BLK']:
             p_avg[f'{s}/G'] = (p_avg[s] / p_avg['GP']).round(1)
             
-        t_sum = df_t.groupby(name_col).sum(numeric_only=True).reset_index()
-        return p_avg, df_p, t_sum, name_col, team_col
-    except Exception as e:
-        st.error(f"OTG Sync Error: {e}")
-        return None, None, None, None, None
+        # Team Standings
+        t_stats = df_t.groupby('Team Name').agg({
+            'Win': 'sum', 'Game_ID': 'count', 'PTS': 'sum', 'REB': 'sum', 'AST': 'sum', 'STL': 'sum', 'BLK': 'sum'
+        }).reset_index()
+        t_stats['Loss'] = (t_stats['Game_ID'] - t_stats['Win']).astype(int)
+        t_stats['Record'] = t_stats['Win'].astype(int).astype(str) + "-" + t_stats['Loss'].astype(str)
+        
+        for s in ['PTS', 'REB', 'AST', 'STL', 'BLK']:
+            t_stats[f'{s}_Avg'] = (t_stats[s] / t_stats['Game_ID']).round(1)
+            
+        return p_avg, df_p, t_stats
+    except: return None, None, None
 
-p_avg, df_raw, t_totals, name_col, team_col = load_data()
+p_avg, df_raw, t_stats = load_data()
 
-# 5. HUB INTERFACE
+# 3. SPLASH SCREEN (OTG BRANDED)
+if 'entered' not in st.session_state: st.session_state.entered = False
+
+if not st.session_state.entered:
+    st.markdown('<div class="splash-container">', unsafe_allow_html=True)
+    logo_file = Path(__file__).parent / "logo.png"
+    if logo_file.exists():
+        st.image(str(logo_file), width=320)
+    st.markdown("<h1 style='font-size: 60px; margin-bottom: 5px;'>OTG STAT HUB</h1>", unsafe_allow_html=True)
+    st.markdown("<h3 style='color: #ff4b4b; letter-spacing: 5px; margin-bottom: 25px;'>OFFICIAL BROADCAST TERMINAL</h3>", unsafe_allow_html=True)
+    if st.button("ENTER OTG HUB", use_container_width=True):
+        st.session_state.entered = True
+        st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
+    st.stop()
+
+# 4. MAIN HUB
 if p_avg is not None:
-    if logo_path.exists(): st.sidebar.image(str(logo_path), use_container_width=True)
-    st.markdown('<div class="header-banner">🏀 OTG STAT HUB | SEASON 1 BROADCAST</div>', unsafe_allow_html=True)
+    # TICKER
+    leads = []
+    for cat in ['PTS', 'AST', 'REB', 'STL', 'BLK']:
+        if not p_avg.empty:
+            l = p_avg.nlargest(1, f'{cat}/G').iloc[0]
+            leads.append(f"🔥 {cat}: {l['Player/Team']} ({l[cat+'/G']})")
     
-    # DYNAMIC TICKER
-    week1_data = df_raw[df_raw['Game_ID'].astype(str).str.startswith('1')]
-    week1_high = week1_data.nlargest(1, 'PTS').iloc[0] if not week1_data.empty else None
-    last_game_ids = sorted(df_raw['Game_ID'].unique())[-2:]
-    recent_news = [f"Game {gid} Total: {int(df_raw[df_raw['Game_ID'] == gid]['PTS'].sum())} PTS" for gid in last_game_ids]
+    last_3 = sorted(df_raw['Game_ID'].unique())[-3:]
+    for gid in last_3:
+        mvp = df_raw[df_raw['Game_ID'] == gid].nlargest(1, 'PIE').iloc[0]
+        leads.append(f"🎮 G{int(gid)} MVP: {mvp['Player/Team']} ({int(mvp['PTS'])} PTS)")
 
-    ticker_items = [
-        f"🏆 WEEK 1 HIGH: {week1_high[name_col]} ({int(week1_high['PTS'])} PTS)" if week1_high is not None else "OTG DATA LOADING...",
-        " | ".join(recent_news),
-        f"🎯 LEADER: {p_avg.nlargest(1, 'PTS/G').iloc[0][name_col]} ({p_avg.nlargest(1, 'PTS/G').iloc[0]['PTS/G']})"
-    ]
-    st.markdown(f'<div class="ticker-wrap"><div class="ticker-content"><span class="ticker-item">{"  •  ".join(ticker_items)}</span></div></div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="ticker-wrap"><div class="ticker-content"><span class="ticker-item">{"  •  ".join(leads)}</span></div></div>', unsafe_allow_html=True)
+    st.markdown('<div class="header-banner">🏀 OTG STAT HUB | SEASON 1</div>', unsafe_allow_html=True)
 
-    # 6. TAB NAVIGATION
-    tab_p, tab_lead, tab_t, tab_v, tab_r = st.tabs(["👤 PLAYERS", "🔝 LEADERS", "🏘️ TEAMS", "⚔️ VERSUS", "📖 RECORDS"])
+    tabs = st.tabs(["👤 PLAYERS", "🏘️ STANDINGS", "🔝 LEADERS", "⚔️ VERSUS", "📖 RECORDS"])
 
-    with tab_p:
-        st.dataframe(p_avg[[name_col, team_col, 'GP', 'PTS/G', 'REB/G', 'AST/G', 'STL/G', 'BLK/G', 'PIE']].sort_values('PIE', ascending=False), use_container_width=True, hide_index=True)
+    with tabs[0]: # INTERACTIVE SCOUTING
+        st.subheader("Click a player row to view Scouting Report")
+        table = p_avg[['Player/Team', 'Team Name', 'GP', 'PTS/G', 'REB/G', 'AST/G', 'PIE']].sort_values('PIE', ascending=False)
+        sel = st.dataframe(table, use_container_width=True, hide_index=True, on_select="rerun", selection_mode="single-row")
+        if len(sel.selection.rows) > 0:
+            name = table.iloc[sel.selection.rows[0]]['Player/Team']
+            hist = df_raw[df_raw['Player/Team'] == name].sort_values('Game_ID', ascending=False)
+            st.header(f"🔍 {name} Scouting Report")
+            c1, c2 = st.columns([1, 2])
+            with c1:
+                st.metric("PTS HIGH", int(hist['PTS'].max()))
+                st.metric("REB HIGH", int(hist['REB'].max()))
+                st.metric("AST HIGH", int(hist['AST'].max()))
+            with c2:
+                st.line_chart(hist.set_index('Game_ID')['PTS'], height=200)
+            st.table(hist[['Game_ID', 'PTS', 'REB', 'AST', 'PIE']].head(5))
 
-    with tab_lead:
-        cat = st.selectbox("Category:", ["PTS/G", "REB/G", "AST/G", "PIE"])
-        top_10 = p_avg[[name_col, team_col, cat]].sort_values(cat, ascending=False).head(10)
-        fig = px.bar(top_10, x=cat, y=name_col, color=cat, orientation='h', template="plotly_dark", color_continuous_scale="Reds")
-        st.plotly_chart(fig, use_container_width=True)
-        st.table(top_10)
+    with tabs[1]: # STANDINGS
+        st.dataframe(t_stats[['Team Name', 'Record', 'PTS', 'REB', 'AST']].sort_values('Win', ascending=False), use_container_width=True, hide_index=True)
 
-    with tab_t:
-        team_p = p_avg.groupby(team_col)['PIE'].sum().reset_index().sort_values('PIE', ascending=False)
-        for i, row in team_p.iterrows():
-            st.metric(f"Rank {i+1}: {row[team_col]}", f"{round(row['PIE'], 1)} Total Impact")
+    with tabs[2]: # RANKED LEADERS
+        cat_sel = st.selectbox("Category", ["PTS/G", "REB/G", "AST/G", "STL/G", "BLK/G", "PIE"])
+        t10 = p_avg[['Player/Team', 'Team Name', cat_sel]].nlargest(10, cat_sel).reset_index(drop=True)
+        t10.index += 1
+        st.markdown(f"### Top 10 Ranked: {cat_sel}")
+        st.table(t10)
+        st.plotly_chart(px.bar(t10, x=cat_sel, y='Player/Team', orientation='h', template="plotly_dark", color_continuous_scale="Reds"), use_container_width=True)
 
-    with tab_v:
-        v_mode = st.radio("Mode", ["Player vs Player", "Team vs Team"], horizontal=True)
-        c1, vs_text, c2 = st.columns([2, 0.5, 2])
+    with tabs[3]: # VERSUS
+        v_mode = st.radio("Matchup Type", ["Player vs Player", "Team vs Team"], horizontal=True)
+        v1, v2 = st.columns(2)
         if v_mode == "Player vs Player":
-            p1_n, p2_n = c1.selectbox("P1", p_avg[name_col].unique(), index=0), c2.selectbox("P2", p_avg[name_col].unique(), index=1)
-            d1, d2 = p_avg[p_avg[name_col] == p1_n].iloc[0], p_avg[p_avg[name_col] == p2_n].iloc[0]
+            p1 = v1.selectbox("P1", p_avg['Player/Team'].unique(), index=0)
+            p2 = v2.selectbox("P2", p_avg['Player/Team'].unique(), index=1)
+            d1, d2 = p_avg[p_avg['Player/Team']==p1].iloc[0], p_avg[p_avg['Player/Team']==p2].iloc[0]
             for s in ['PTS/G', 'REB/G', 'AST/G', 'PIE']:
                 sc1, sc2 = st.columns(2)
-                sc1.metric(f"{p1_n} {s}", d1[s], delta=round(d1[s] - d2[s], 1))
-                sc2.metric(f"{p2_n} {s}", d2[s], delta=round(d2[s] - d1[s], 1))
+                sc1.metric(f"{p1} {s}", d1[s], delta=round(d1[s]-d2[s], 1)); sc2.metric(f"{p2} {s}", d2[s], delta=round(d2[s]-d1[s], 1))
         else:
-            t1_n, t2_n = c1.selectbox("T1", t_totals[name_col].unique(), index=0), c2.selectbox("T2", t_totals[name_col].unique(), index=1)
-            t1, t2 = t_totals[t_totals[name_col] == t1_n].iloc[0], t_totals[t_totals[name_col] == t2_n].iloc[0]
-            for s in ['PTS', 'REB', 'AST']:
+            t1 = v1.selectbox("Team 1", t_stats['Team Name'].unique(), index=0)
+            t2 = v2.selectbox("Team 2", t_stats['Team Name'].unique(), index=1)
+            td1, td2 = t_stats[t_stats['Team Name']==t1].iloc[0], t_stats[t_stats['Team Name']==t2].iloc[0]
+            for s in ['PTS_Avg', 'REB_Avg', 'AST_Avg', 'STL_Avg', 'BLK_Avg']:
                 sc1, sc2 = st.columns(2)
-                sc1.metric(f"{t1_n} {s}", int(t1[s]), delta=int(t1[s] - t2[s]))
-                sc2.metric(f"{t2_n} {s}", int(t2[s]), delta=int(t2[s] - t1[s]))
+                sc1.metric(f"{t1} {s.split('_')[0]}", td1[s], delta=round(td1[s]-td2[s], 1)); sc2.metric(f"{t2} {s.split('_')[0]}", td2[s], delta=round(td2[s]-td1[s], 1))
 
-    with tab_r:
-        r_pts, r_reb = df_raw.nlargest(1, 'PTS').iloc[0], df_raw.nlargest(1, 'REB').iloc[0]
-        st.metric("All-Time Scoring Record", f"{int(r_pts['PTS'])}", r_pts[name_col])
-        st.metric("All-Time Rebound Record", f"{int(r_reb['REB'])}", r_reb[name_col])
+    with tabs[4]: # RECORDS
+        c1, c2 = st.columns(2)
+        r_pts = df_raw.loc[df_raw['PTS'].idxmax()]; r_reb = df_raw.loc[df_raw['REB'].idxmax()]
+        r_stl = df_raw.loc[df_raw['STL'].idxmax()]; r_blk = df_raw.loc[df_raw['BLK'].idxmax()]
+        c1.metric("Points Record", int(r_pts['PTS']), r_pts['Player/Team'])
+        c1.metric("Steals Record", int(r_stl['STL']), r_stl['Player/Team'])
+        c2.metric("Rebounds Record", int(r_reb['REB']), r_reb['Player/Team'])
+        c2.metric("Blocks Record", int(r_blk['BLK']), r_blk['Player/Team'])
 
-    st.markdown('<div style="text-align: center; color: #444; padding: 20px;">© 2026 OTG STAT HUB | BROADCAST ENGINE</div>', unsafe_allow_html=True)
+    st.markdown('<div style="text-align: center; color: #444; padding: 20px;">© 2026 OTG STAT HUB</div>', unsafe_allow_html=True)
