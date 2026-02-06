@@ -167,3 +167,4 @@ if p_avg is not None:
         c2.metric("Blocks Record", int(r_blk['BLK']), r_blk['Player/Team'])
 
     st.markdown('<div style="text-align: center; color: #444; padding: 20px;">© 2026 OTG STAT HUB</div>', unsafe_allow_html=True)
+
