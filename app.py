@@ -11,11 +11,9 @@ st.markdown("""
     #MainMenu {visibility: hidden;} footer {visibility: hidden;} header {visibility: hidden;}
     div[data-testid="stToolbar"] {visibility: hidden;} [data-testid="stStatusWidget"] {display: none;}
     
-    /* Force height and prevent scroll on splash */
     .block-container { padding: 0rem !important; margin: 0rem !important; }
     .stApp { background: radial-gradient(circle, #1b1f24 0%, #0e1117 100%); color: white; }
     
-    /* Perfect Splash Centering */
     .splash-container {
         display: flex; flex-direction: column; align-items: center; justify-content: center;
         height: 92vh; width: 100%; text-align: center; overflow: hidden;
@@ -24,7 +22,6 @@ st.markdown("""
     [data-testid="stMetric"] { background: rgba(255, 255, 255, 0.03) !important; border-left: 6px solid #ff4b4b !important; border-radius: 12px !important; padding: 22px !important; }
     .header-banner { padding: 15px; text-align: center; background: #ff4b4b; border-bottom: 5px solid white; color: white; font-family: 'Arial Black'; font-size: 24px; }
     
-    /* Ticker */
     @keyframes ticker { 0% { transform: translateX(100%); } 100% { transform: translateX(-100%); } }
     .ticker-wrap { width: 100%; overflow: hidden; background: #161b22; color: #ff4b4b; padding: 10px 0; font-family: 'Arial Black'; border-bottom: 2px solid #ff4b4b; }
     .ticker-content { display: inline-block; white-space: nowrap; animation: ticker 60s linear infinite; }
@@ -32,7 +29,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# 2. DATA ENGINE (ROBUST OTG LOGIC)
+# 2. DATA ENGINE (FIXED FOR KEYERROR: 'WIN')
 SHEET_ID = "1-CMiwe8UV0bHE1IR_z8zvg_kE2JfMnsfwB_lBc0rsk0"
 URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv"
 
@@ -42,7 +39,7 @@ def load_data():
         df = pd.read_csv(URL)
         df.columns = df.columns.str.strip()
         
-        # Numeric Safety
+        # Force core columns to exist as numeric
         core_cols = ['PTS', 'REB', 'AST', 'STL', 'BLK', 'FGA', 'Game_ID', 'Win']
         for c in core_cols:
             if c in df.columns:
@@ -61,22 +58,31 @@ def load_data():
         for s in ['PTS', 'REB', 'AST', 'STL', 'BLK']:
             p_avg[f'{s}/G'] = (p_avg[s] / p_avg['GP']).round(1)
             
-        # Team Standings
+        # Team Standings - EXPLICITLY KEEPING 'WIN'
         t_stats = df_t.groupby('Team Name').agg({
-            'Win': 'sum', 'Game_ID': 'count', 'PTS': 'sum', 'REB': 'sum', 'AST': 'sum', 'STL': 'sum', 'BLK': 'sum'
+            'Win': 'sum', 
+            'Game_ID': 'count', 
+            'PTS': 'sum', 
+            'REB': 'sum', 
+            'AST': 'sum', 
+            'STL': 'sum', 
+            'BLK': 'sum'
         }).reset_index()
+        
         t_stats['Loss'] = (t_stats['Game_ID'] - t_stats['Win']).astype(int)
         t_stats['Record'] = t_stats['Win'].astype(int).astype(str) + "-" + t_stats['Loss'].astype(str)
         
+        # Team Averages for Comparison
         for s in ['PTS', 'REB', 'AST', 'STL', 'BLK']:
             t_stats[f'{s}_Avg'] = (t_stats[s] / t_stats['Game_ID']).round(1)
             
         return p_avg, df_p, t_stats
-    except: return None, None, None
+    except Exception:
+        return None, None, None
 
 p_avg, df_raw, t_stats = load_data()
 
-# 3. SPLASH SCREEN (OTG BRANDED)
+# 3. SPLASH SCREEN
 if 'entered' not in st.session_state: st.session_state.entered = False
 
 if not st.session_state.entered:
@@ -92,7 +98,7 @@ if not st.session_state.entered:
     st.markdown('</div>', unsafe_allow_html=True)
     st.stop()
 
-# 4. MAIN HUB
+# 4. MAIN INTERFACE
 if p_avg is not None:
     # TICKER
     leads = []
@@ -100,19 +106,12 @@ if p_avg is not None:
         if not p_avg.empty:
             l = p_avg.nlargest(1, f'{cat}/G').iloc[0]
             leads.append(f"🔥 {cat}: {l['Player/Team']} ({l[cat+'/G']})")
-    
-    last_3 = sorted(df_raw['Game_ID'].unique())[-3:]
-    for gid in last_3:
-        mvp = df_raw[df_raw['Game_ID'] == gid].nlargest(1, 'PIE').iloc[0]
-        leads.append(f"🎮 G{int(gid)} MVP: {mvp['Player/Team']} ({int(mvp['PTS'])} PTS)")
-
     st.markdown(f'<div class="ticker-wrap"><div class="ticker-content"><span class="ticker-item">{"  •  ".join(leads)}</span></div></div>', unsafe_allow_html=True)
     st.markdown('<div class="header-banner">🏀 OTG STAT HUB | SEASON 1</div>', unsafe_allow_html=True)
 
     tabs = st.tabs(["👤 PLAYERS", "🏘️ STANDINGS", "🔝 LEADERS", "⚔️ VERSUS", "📖 RECORDS"])
 
-    with tabs[0]: # INTERACTIVE SCOUTING
-        st.subheader("Click a player row to view Scouting Report")
+    with tabs[0]: # PLAYERS
         table = p_avg[['Player/Team', 'Team Name', 'GP', 'PTS/G', 'REB/G', 'AST/G', 'PIE']].sort_values('PIE', ascending=False)
         sel = st.dataframe(table, use_container_width=True, hide_index=True, on_select="rerun", selection_mode="single-row")
         if len(sel.selection.rows) > 0:
@@ -128,14 +127,16 @@ if p_avg is not None:
                 st.line_chart(hist.set_index('Game_ID')['PTS'], height=200)
             st.table(hist[['Game_ID', 'PTS', 'REB', 'AST', 'PIE']].head(5))
 
-    with tabs[1]: # STANDINGS
-        st.dataframe(t_stats[['Team Name', 'Record', 'PTS', 'REB', 'AST']].sort_values('Win', ascending=False), use_container_width=True, hide_index=True)
+    with tabs[1]: # STANDINGS (BUG FIXED HERE)
+        if t_stats is not None and not t_stats.empty:
+            # Sort by 'Win' (guaranteed by engine now) and display
+            standings_df = t_stats[['Team Name', 'Record', 'PTS', 'REB', 'AST', 'Win']].sort_values('Win', ascending=False)
+            st.dataframe(standings_df.drop(columns=['Win']), use_container_width=True, hide_index=True)
 
-    with tabs[2]: # RANKED LEADERS
+    with tabs[2]: # LEADERS
         cat_sel = st.selectbox("Category", ["PTS/G", "REB/G", "AST/G", "STL/G", "BLK/G", "PIE"])
         t10 = p_avg[['Player/Team', 'Team Name', cat_sel]].nlargest(10, cat_sel).reset_index(drop=True)
         t10.index += 1
-        st.markdown(f"### Top 10 Ranked: {cat_sel}")
         st.table(t10)
         st.plotly_chart(px.bar(t10, x=cat_sel, y='Player/Team', orientation='h', template="plotly_dark", color_continuous_scale="Reds"), use_container_width=True)
 
@@ -153,7 +154,7 @@ if p_avg is not None:
             t1 = v1.selectbox("Team 1", t_stats['Team Name'].unique(), index=0)
             t2 = v2.selectbox("Team 2", t_stats['Team Name'].unique(), index=1)
             td1, td2 = t_stats[t_stats['Team Name']==t1].iloc[0], t_stats[t_stats['Team Name']==t2].iloc[0]
-            for s in ['PTS_Avg', 'REB_Avg', 'AST_Avg', 'STL_Avg', 'BLK_Avg']:
+            for s in ['PTS_Avg', 'REB_Avg', 'AST_Avg']:
                 sc1, sc2 = st.columns(2)
                 sc1.metric(f"{t1} {s.split('_')[0]}", td1[s], delta=round(td1[s]-td2[s], 1)); sc2.metric(f"{t2} {s.split('_')[0]}", td2[s], delta=round(td2[s]-td1[s], 1))
 
@@ -167,4 +168,5 @@ if p_avg is not None:
         c2.metric("Blocks Record", int(r_blk['BLK']), r_blk['Player/Team'])
 
     st.markdown('<div style="text-align: center; color: #444; padding: 20px;">© 2026 OTG STAT HUB</div>', unsafe_allow_html=True)
+
 
