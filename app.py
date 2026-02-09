@@ -13,23 +13,16 @@ st.markdown("""
     .block-container { padding: 0rem !important; margin: 0rem !important; }
     .stApp { background: radial-gradient(circle at top, #1f1f1f 0%, #050505 100%); color: #e0e0e0; }
     
-    /* Centered Splash Screen */
     .splash-container {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        height: 100vh;
-        width: 100%;
-        text-align: center;
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        height: 100vh; width: 100%; text-align: center;
     }
 
     div[data-testid="stMetric"] { 
         background: rgba(255, 255, 255, 0.05) !important; 
         backdrop-filter: blur(10px);
         border: 1px solid rgba(255, 75, 75, 0.2) !important; 
-        border-radius: 20px !important; 
-        padding: 20px !important;
+        border-radius: 20px !important; padding: 20px !important;
     }
     .header-banner { 
         padding: 25px; text-align: center; 
@@ -43,7 +36,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# 2. DATA ENGINE (Pointed to OTG Sheet)
+# 2. DATA ENGINE
 SHEET_ID = "1-CMiwe8UV0bHE1IR_z8zvg_kE2JfMnsfwB_lBc0rsk0"
 URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv"
 
@@ -52,13 +45,11 @@ def load_data():
     try:
         df = pd.read_csv(URL)
         df.columns = df.columns.str.strip()
-        
         req_cols = ['PTS', 'REB', 'AST', 'STL', 'BLK', 'TO', 'FGA', 'FGM', '3PM', '3PA', 'FTA', 'FTM', 'Game_ID', 'Win', 'Season']
         for c in req_cols:
             if c not in df.columns: df[c] = 0
             df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0)
         
-        # FF Detection
         df['is_ff'] = (df['PTS'] == 0) & (df['FGA'] == 0) & (df['REB'] == 0)
         
         def calc_multis(row):
@@ -66,10 +57,11 @@ def load_data():
             s = [row['PTS'], row['REB'], row['AST'], row['STL'], row['BLK']]
             tens = sum(1 for x in s if x >= 10)
             return pd.Series([1 if tens >= 2 else 0, 1 if tens >= 3 else 0])
-            
         df[['DD', 'TD']] = df.apply(calc_multis, axis=1)
+        
         df['PIE'] = (df['PTS'] + df['REB'] + df['AST'] + df['STL'] + df['BLK']) - (df['FGA'] * 0.5) - df['TO']
         df['Poss'] = df['FGA'] + 0.44 * df['FTA'] + df['TO']
+        df['FG%_Raw'] = (df['FGM'] / df['FGA'].replace(0,1) * 100).round(1)
         return df
     except Exception as e:
         return str(e)
@@ -81,9 +73,6 @@ if 'entered' not in st.session_state: st.session_state.entered = False
 
 if not st.session_state.entered:
     st.markdown('<div class="splash-container">', unsafe_allow_html=True)
-    logo_file = Path(__file__).parent / "logo.png"
-    if logo_file.exists():
-        st.image(str(logo_file), width=320)
     st.markdown("<h1 style='font-size: 70px; color: white; margin-bottom: 0;'>OTG STAT HUB</h1>", unsafe_allow_html=True)
     st.markdown("<p style='letter-spacing: 10px; color: #ff4b4b; margin-bottom: 40px;'>OFFICIAL BROADCAST TERMINAL</p>", unsafe_allow_html=True)
     if st.button("ENTER OTG HUB"):
@@ -97,46 +86,64 @@ def get_stats(dataframe, group):
     total_gp = dataframe.groupby(group).size().reset_index(name='GP')
     played_df = dataframe[dataframe['is_ff'] == False]
     played_gp = played_df.groupby(group).size().reset_index(name='Played_GP')
-    
     sums = dataframe.groupby(group).sum(numeric_only=True).reset_index()
     m = pd.merge(sums, total_gp, on=group)
     m = pd.merge(m, played_gp, on=group, how='left').fillna(0)
-    
     divisor = m['Played_GP'].replace(0, 1)
     for col in ['PTS', 'REB', 'AST', 'STL', 'BLK', 'TO', '3PM', '3PA', 'FTM', 'FTA', 'Poss', 'FGA']:
         m[f'{col}/G'] = (m[col] / divisor).round(2)
-    
     m['FG%'] = (m['FGM'] / m['FGA'].replace(0,1) * 100).round(2)
-    m['3P%'] = (m['3PM'] / m['3PA'].replace(0,1) * 100).round(2)
-    m['FT%'] = (m['FTM'] / m['FTA'].replace(0,1) * 100).round(2)
     m['PIE'] = (m['PIE'] / divisor).round(2)
     return m
 
-# 5. DIALOG CARDS
+# 5. DIALOG CARDS (UPDATED FOR BROADCAST)
 @st.dialog("🏀 OTG SCOUTING REPORT", width="large")
 def show_card(name, stats_df, raw_df, is_player=True):
     row = stats_df.loc[name]
     st.title(f"{'👤' if is_player else '🏘️'} {name}")
-    c = st.columns(5)
-    c[0].metric("PPG", row['PTS/G']); c[1].metric("RPG", row['REB/G']); c[2].metric("APG", row['AST/G'])
-    c[3].metric("SPG", row['STL/G']); c[4].metric("BPG", row['BLK/G'])
+    
+    cols = st.columns(5)
+    cols[0].metric("PPG", row['PTS/G']); cols[1].metric("RPG", row['REB/G']); cols[2].metric("APG", row['AST/G'])
+    cols[3].metric("SPG", row['STL/G']); cols[4].metric("BPG", row['BLK/G'])
     st.markdown("---")
-    s = st.columns(5)
-    s[0].metric("FG%", f"{row['FG%']}%"); s[1].metric("3P%", f"{row['3P%']}%"); 
-    s[2].metric("FT%", f"{row['FT%']}%"); s[3].metric("TO/G", row['TO/G']); s[4].metric("PIE", row['PIE'])
     
-    st.markdown("#### 🕒 Recent Form")
+    st.subheader("🏆 Season Highs")
     search_col = 'Player/Team' if is_player else 'Team Name'
-    pt_type = 'player' if is_player else 'team'
-    recent = raw_df[(raw_df[search_col] == name) & (raw_df['Type'].str.lower() == pt_type)].sort_values(['Season', 'Game_ID'], ascending=False).head(3)
+    if is_player:
+        personal_raw = raw_df[raw_df[search_col] == name]
+    else:
+        personal_raw = raw_df[(raw_df[search_col] == name) & (raw_df['Type'].str.lower() == 'team')]
+        
+    h1, h2, h3, h4, h5 = st.columns(5)
+    h1.metric("Max PTS", int(personal_raw['PTS'].max()))
+    h2.metric("Max REB", int(personal_raw['REB'].max()))
+    h3.metric("Max AST", int(personal_raw['AST'].max()))
+    h4.metric("Max STL", int(personal_raw['STL'].max()))
+    h5.metric("Max BLK", int(personal_raw['BLK'].max()))
+    st.markdown("---")
+
+    st.subheader("🕒 Recent Form (Full Stat Lines)")
+    if is_player:
+        recent_data = raw_df[(raw_df['Player/Team'] == name) & (raw_df['Type'].str.lower() == 'player')]
+    else:
+        recent_data = raw_df[(raw_df['Team Name'] == name) & (raw_df['Type'].str.lower() == 'team')]
     
-    f_cols = st.columns(3)
-    for idx, (col, (_, g)) in enumerate(zip(f_cols, recent.iterrows())):
+    recent = recent_data.sort_values(['Season', 'Game_ID'], ascending=False).head(3)
+    for _, g in recent.iterrows():
         res = "✅ W" if g['Win'] == 1 else "❌ L"
-        val = "FORFEIT" if g['is_ff'] else f"{int(g['PTS'])} PTS"
-        col.metric(f"Game {int(g['Game_ID'])}", val, delta=res)
-    
-    if st.button("Close Terminal"): st.rerun()
+        label = f"Game {int(g['Game_ID'])} | {res}"
+        if g['is_ff']:
+            st.info(f"{label} - FORFEIT")
+        else:
+            f1, f2, f3, f4, f5, f6 = st.columns(6)
+            f1.metric(f"{label}", f"{int(g['PTS'])} PTS")
+            f2.metric("REB", int(g['REB'])); f3.metric("AST", int(g['AST']))
+            f4.metric("STL", int(g['STL'])); f5.metric("BLK", int(g['BLK']))
+            f6.metric("FG%", f"{g['FG%_Raw']}%")
+
+    # Important Broadcast Note: Click button to clear focus
+    if st.button("Close Terminal & Clear Selection", use_container_width=True):
+        st.rerun()
 
 # 6. APP CONTENT
 if isinstance(full_df, str):
@@ -150,7 +157,6 @@ elif full_df is not None:
     p_stats = get_stats(df_active[df_active['Type'].str.lower() == 'player'], 'Player/Team').set_index('Player/Team')
     t_stats = get_stats(df_active[df_active['Type'].str.lower() == 'team'], 'Team Name').set_index('Team Name')
 
-    # TICKER
     leads = [f"🔥 {c}: {p_stats.nlargest(1, f'{c}/G').index[0]} ({p_stats.nlargest(1, f'{c}/G').iloc[0][f'{c}/G']})" for c in ['PTS', 'AST', 'REB', 'STL', 'BLK']]
     st.markdown(f'<div class="ticker-wrap"><div class="ticker-content"><span class="ticker-item">{" • ".join(leads)}</span></div></div>', unsafe_allow_html=True)
     st.markdown('<div class="header-banner">🏀 OTG STAT HUB | SEASON 1</div>', unsafe_allow_html=True)
@@ -204,10 +210,9 @@ elif full_df is not None:
         st.header("🔐 THE OTG VAULT")
         if st.text_input("Enter Broadcast Passcode", type="password") == "OTG2026":
             st.success("Terminal Authenticated.")
-            st.markdown("### 🧪 Advanced Stats & Streaks")
             adv = p_stats[p_stats['Played_GP'] > 0].reset_index().copy()
             if not adv.empty:
-                adv['TS%'] = (adv['PTS'] / (2 * (adv['FGA'] + 0.44 * adv['FTA']).replace(0, 1)) * 100).round(2)
+                adv['TS%'] = (adv['PTS'] / (2 * (adv['FGA'] + 0.44 * adv.get('FTA', 0))).replace(0, 1) * 100).round(2)
                 adv['PPS'] = (adv['PTS'] / adv['FGA'].replace(0, 1)).round(2)
                 st.dataframe(adv[['Player/Team', 'Poss/G', 'TS%', 'PPS', 'PIE']], width="stretch", hide_index=True)
                 adv_plot = adv.rename(columns={'FGA/G': 'FGA_G', 'PTS/G': 'PTS_G', 'Poss/G': 'Poss_G'})
