@@ -1,5 +1,4 @@
 import streamlit as st
-import pd as pd
 import pandas as pd
 import plotly.express as px
 
@@ -111,7 +110,6 @@ elif full_df is not None:
     with st.sidebar: sel_box = st.selectbox("Broadcast Scope", opts, index=1)
     df_active = full_df if sel_box == "CAREER STATS" else full_df[full_df['Season'] == int(sel_box.replace("Season ", ""))]
 
-    # Exclude Tournament (8k) and Playoff (9k) from Regular Season tabs
     df_reg = df_active[~df_active['Game_ID'].between(8000, 9999)]
     
     p_stats = get_stats(df_reg[df_reg['Type'].str.lower() == 'player'], 'Player/Team').set_index('Player/Team')
