@@ -1,4 +1,5 @@
 import streamlit as st
+import pd as pd
 import pandas as pd
 import plotly.express as px
 
@@ -71,7 +72,7 @@ def get_stats(dataframe, group):
     m = pd.merge(sums, total_gp, on=group)
     m = pd.merge(m, played_gp, on=group, how='left').fillna(0)
     divisor = m['Played_GP'].replace(0, 1)
-    for col in ['PTS', 'REB', 'AST', 'STL', 'BLK', 'TO', '3PM', '3PA', 'FTM', 'FTA', 'Poss_Raw', 'FGA', 'FGM', 'PIE_Raw']:
+    for col in ['PTS', 'REB', 'AST', 'STL', 'BLK', 'TO', '3PM', '3PA', 'FTM', 'FTA', 'Poss_Raw', 'FGA', 'FGM', 'PIE_Raw', 'DD', 'TD']:
         m[f'{col}/G'] = (m[col] / divisor).round(2)
     m['FG%'] = (m['FGM'] / m['FGA'].replace(0,1) * 100).round(2)
     m['TS%'] = (m['PTS'] / (2 * (m['FGA'] + 0.44 * m['FTA']).replace(0, 1)) * 100).round(2)
@@ -110,25 +111,28 @@ elif full_df is not None:
     with st.sidebar: sel_box = st.selectbox("Broadcast Scope", opts, index=1)
     df_active = full_df if sel_box == "CAREER STATS" else full_df[full_df['Season'] == int(sel_box.replace("Season ", ""))]
 
-    p_stats = get_stats(df_active[df_active['Type'].str.lower() == 'player'], 'Player/Team').set_index('Player/Team')
-    t_stats = get_stats(df_active[df_active['Type'].str.lower() == 'team'], 'Team Name').set_index('Team Name')
+    # Exclude Tournament (8k) and Playoff (9k) from Regular Season tabs
+    df_reg = df_active[~df_active['Game_ID'].between(8000, 9999)]
+    
+    p_stats = get_stats(df_reg[df_reg['Type'].str.lower() == 'player'], 'Player/Team').set_index('Player/Team')
+    t_stats = get_stats(df_reg[df_reg['Type'].str.lower() == 'team'], 'Team Name').set_index('Team Name')
 
     leads = [f"🔥 {c}: {p_stats.nlargest(1, f'{c}/G').index[0]} ({p_stats.nlargest(1, f'{c}/G').iloc[0][f'{c}/G']})" for c in ['PTS', 'AST', 'REB', 'STL', 'BLK']]
     st.markdown(f'<div class="ticker-wrap"><div class="ticker-content"><span class="ticker-item">{" • ".join(leads)}</span></div></div>', unsafe_allow_html=True)
     st.markdown('<div class="header-banner">🏀 OTG STAT HUB | BROADCAST TERMINAL</div>', unsafe_allow_html=True)
 
-    tabs = st.tabs(["👤 PLAYERS", "🏘️ STANDINGS", "🔝 LEADERS", "⚔️ VERSUS", "📖 RECORDS", "🔐 THE VAULT"])
+    tabs = st.tabs(["👤 PLAYERS", "🏘️ STANDINGS", "🔝 LEADERS", "⚔️ VERSUS", "🏆 POSTSEASON", "📖 RECORDS", "🔐 THE VAULT"])
 
     with tabs[0]:
         p_disp = p_stats[['GP', 'PTS/G', 'REB/G', 'AST/G', 'FG%', 'TO/G', 'PIE']].sort_values('PIE', ascending=False)
         sel_p = st.dataframe(p_disp, width="stretch", on_select="rerun", selection_mode="single-row")
-        if len(sel_p.selection.rows) > 0: show_card(p_disp.index[sel_p.selection.rows[0]], p_stats, df_active, True)
+        if len(sel_p.selection.rows) > 0: show_card(p_disp.index[sel_p.selection.rows[0]], p_stats, df_reg, True)
 
     with tabs[1]:
         t_stats['Record'] = t_stats['Win'].astype(int).astype(str) + "-" + (t_stats['GP'] - t_stats['Win']).astype(int).astype(str)
         t_disp = t_stats.sort_values('Win', ascending=False)[['Record', 'PTS/G', 'REB/G', 'AST/G', 'TO/G', 'FG%']]
         sel_t = st.dataframe(t_disp, width="stretch", on_select="rerun", selection_mode="single-row")
-        if len(sel_t.selection.rows) > 0: show_card(t_disp.index[sel_t.selection.rows[0]], t_stats, df_active, False)
+        if len(sel_t.selection.rows) > 0: show_card(t_disp.index[sel_t.selection.rows[0]], t_stats, df_reg, False)
 
     with tabs[2]:
         l_cat = st.selectbox("Category", ["PTS/G", "REB/G", "AST/G", "STL/G", "BLK/G", "TO/G", "PIE"])
@@ -137,27 +141,59 @@ elif full_df is not None:
 
     with tabs[3]:
         v_mode = st.radio("Comparison Mode", ["Player vs Player", "Team vs Team"], horizontal=True)
-        v1, v2 = st.columns(2)
+        v1, mid, v2 = st.columns([2, 1, 2])
         if v_mode == "Player vs Player":
-            p1 = v1.selectbox("P1", p_stats.index, index=0); p2 = v2.selectbox("P2", p_stats.index, index=1); d1, d2 = p_stats.loc[p1], p_stats.loc[p2]
-            metrics = ['PTS/G', 'REB/G', 'AST/G', 'STL/G', 'BLK/G', 'TO/G', 'FG%', 'PIE']
+            p1 = v1.selectbox("P1", p_stats.index, index=0); p2 = v2.selectbox("P2", p_stats.index, index=min(1, len(p_stats)-1)); d1, d2 = p_stats.loc[p1], p_stats.loc[p2]
+            metrics = [('PPG', 'PTS/G'), ('APG', 'AST/G'), ('RPG', 'REB/G'), ('3PM/G', '3PM/G'), ('3PA/G', '3PA/G'), ('FGM/G', 'FGM/G'), ('FGA/G', 'FGA/G'), ('TO/G', 'TO/G'), ('PIE', 'PIE'), ('FG%', 'FG%'), ('DD/G', 'DD/G'), ('TD/G', 'TD/G')]
+            avg_df = p_stats[[m[1] for m in metrics]].mean()
         else:
-            p1 = v1.selectbox("T1", t_stats.index, index=0); p2 = v2.selectbox("T2", t_stats.index, index=1); d1, d2 = t_stats.loc[p1], t_stats.loc[p2]
-            metrics = ['Record', 'PTS/G', 'REB/G', 'AST/G', 'TO/G', 'FG%', 'OffRtg', 'DefRtg']
-        for s in metrics:
-            c1, c2 = st.columns(2)
-            if s == 'Record': c1.metric(f"{p1} {s}", d1[s]); c2.metric(f"{p2} {s}", d2[s])
-            else: c1.metric(f"{p1} {s}", d1[s], round(d1[s]-d2[s], 2)); c2.metric(f"{p2} {s}", d2[s], round(d2[s]-d1[s], 2))
+            p1 = v1.selectbox("T1", t_stats.index, index=0); p2 = v2.selectbox("T2", t_stats.index, index=min(1, len(t_stats)-1)); d1, d2 = t_stats.loc[p1], t_stats.loc[p2]
+            metrics = [('PPG', 'PTS/G'), ('APG', 'AST/G'), ('RPG', 'REB/G'), ('3PM/G', '3PM/G'), ('3PA/G', '3PA/G'), ('FGM/G', 'FGM/G'), ('FGA/G', 'FGA/G'), ('TO/G', 'TO/G'), ('PIE', 'PIE'), ('FG%', 'FG%'), ('DefRtg', 'DefRtg'), ('OffRtg', 'OffRtg')]
+            avg_df = t_stats[[m[1] for m in metrics]].mean()
+            
+        for label, col in metrics:
+            c1, cm, c2 = st.columns([2, 1, 2])
+            val1, val2 = d1[col], d2[col]
+            c1.metric(f"{p1}", val1, round(val1-val2, 2))
+            cm.markdown(f"<div style='text-align:center; color:#ff4b4b; border-bottom: 1px solid #333;'><strong>{label}</strong><br>{avg_df[col]:.1f}<br><small style='color:#666'>AVG</small></div>", unsafe_allow_html=True)
+            c2.metric(f"{p2}", val2, round(val2-val1, 2))
 
     with tabs[4]:
-        st.header("🏆 OTG RECORD BOOK"); hof_type = st.radio("Type", ["Players", "Teams"], horizontal=True); h_cols = ['PTS', 'REB', 'AST', 'STL', 'BLK', '3PM', 'TO']; valid_games = df_active[(df_active['Type'].str.lower() == hof_type[:-1].lower()) & (df_active['is_ff'] == False)]
-        grid = st.columns(4)
-        for i, col in enumerate(h_cols):
-            if not valid_games.empty: val = valid_games[col].max(); grid[i%4].metric(f"Record: {col}", f"{int(val)}", f"by {valid_games.loc[valid_games[col].idxmax()]['Player/Team' if hof_type == 'Players' else 'Team Name']}")
-        st.divider(); cat_hof = st.selectbox("All-Time", ['PTS', 'REB', 'AST', 'STL', 'BLK', 'TO', '3PM', 'DD', 'TD', 'GP', 'Win']); career_df = get_stats(full_df[full_df['Type'].str.lower() == hof_type[:-1].lower()], 'Player/Team' if hof_type == "Players" else "Team Name")
-        st.table(career_df.nlargest(10, cat_hof).reset_index(drop=True)[[career_df.columns[0], 'GP', cat_hof]])
+        st.header("🏆 POSTSEASON BRACKETOLOGY")
+        mode = st.radio("Mode", ["Playoffs (9k)", "Tournament (8k)"], horizontal=True)
+        target_id = 9000 if "Playoffs" in mode else 8000
+        post_df = df_active[df_active['Game_ID'] >= target_id]
+        if post_df.empty: st.info(f"No {mode} data found.")
+        else:
+            ps_type = st.radio("Postseason View", ["Players", "Teams"], horizontal=True)
+            col_id = 'Player/Team' if ps_type == "Players" else 'Team Name'
+            ps_stats = get_stats(post_df[post_df['Type'].str.lower() == ps_type[:-1].lower()], col_id).set_index(col_id)
+            st.dataframe(ps_stats[['GP', 'PTS/G', 'REB/G', 'AST/G', 'STL/G', 'BLK/G', 'FG%']].sort_values('PTS/G', ascending=False), width="stretch")
 
     with tabs[5]:
+        st.header("📖 OTG RECORD BOOK")
+        hof_type = st.radio("Type", ["Players", "Teams"], key="hof_type_radio", horizontal=True)
+        h_cols = ['PTS', 'REB', 'AST', 'STL', 'BLK', '3PM', 'TO']
+        st.subheader("🌟 All-Time Highs (Single Game)")
+        valid_games_all = full_df[(full_df['Type'].str.lower() == hof_type[:-1].lower()) & (full_df['is_ff'] == False)]
+        grid_all = st.columns(4)
+        for i, col in enumerate(h_cols):
+            if not valid_games_all.empty:
+                val = valid_games_all[col].max(); best_row = valid_games_all.loc[valid_games_all[col].idxmax()]
+                grid_all[i%4].metric(f"All-Time: {col}", f"{int(val)}", f"by {best_row['Player/Team' if hof_type == 'Players' else 'Team Name']}")
+        st.divider(); st.subheader(f"📅 {sel_box} Highs (Single Game)")
+        valid_games_season = df_active[(df_active['Type'].str.lower() == hof_type[:-1].lower()) & (df_active['is_ff'] == False)]
+        grid_sea = st.columns(4)
+        for i, col in enumerate(h_cols):
+            if not valid_games_season.empty:
+                val = valid_games_season[col].max(); best_row = valid_games_season.loc[valid_games_season[col].idxmax()]
+                grid_sea[i%4].metric(f"{sel_box}: {col}", f"{int(val)}", f"by {best_row['Player/Team' if hof_type == 'Players' else 'Team Name']}")
+        st.divider(); st.subheader("📈 All-Time Leaderboards")
+        cat_hof = st.selectbox("Category", ['PTS', 'REB', 'AST', 'STL', 'BLK', 'TO', '3PM', 'DD', 'TD', 'GP', 'Win'])
+        career_df = get_stats(full_df[full_df['Type'].str.lower() == hof_type[:-1].lower()], 'Player/Team' if hof_type == "Players" else "Team Name")
+        st.table(career_df.nlargest(10, cat_hof).reset_index(drop=True)[[career_df.columns[0], 'GP', cat_hof]])
+
+    with tabs[6]:
         st.header("🔐 THE OTG VAULT")
         if st.text_input("Enter Passcode", type="password") == "OTG2026":
             st.success("Access Granted.")
@@ -165,24 +201,35 @@ elif full_df is not None:
             if not adv.empty:
                 st.markdown("### 📊 Broadcast Analytics")
                 st.dataframe(adv[['Player/Team', 'Poss/G', 'PPS', 'TS%', 'FGM/G', 'FGA/G', '3PM/G', '3PA/G', 'OffRtg', 'DefRtg', 'PIE']].sort_values('OffRtg', ascending=False), width="stretch", hide_index=True)
-                st.markdown("---"); st.markdown("### 🧪 Analysis Visualizer")
                 v_view = st.selectbox("View", ["Vol vs Eff", "Eff Hub", "Poss Control", "Splits", "Off vs Def"])
                 ap = adv.rename(columns={'FGA/G': 'FGA_G', 'PTS/G': 'PTS_G', 'Poss/G': 'Poss_G', 'TO/G': 'TO_G', 'FGM/G': 'FGM_G', '3PM/G': '3PM_G'})
                 if v_view == "Vol vs Eff": fig = px.scatter(ap, x='FGA_G', y='PTS_G', size='PIE', color='Player/Team', template="plotly_dark")
                 elif v_view == "Eff Hub": fig = px.scatter(ap, x='PPS', y='TS%', size='PTS_G', color='Player/Team', template="plotly_dark")
                 elif v_view == "Poss Control": fig = px.scatter(ap, x='Poss_G', y='TO_G', size='AST/G', color='Player/Team', template="plotly_dark")
                 elif v_view == "Splits": fig = px.scatter(ap, x='FGM_G', y='3PM_G', size='PTS_G', color='Player/Team', template="plotly_dark")
-                elif v_view == "Off vs Def": 
-                    fig = px.scatter(ap, x='OffRtg', y='DefRtg', size='PIE', color='Player/Team', template="plotly_dark")
-                    fig.update_yaxes(autorange="reversed")
+                elif v_view == "Off vs Def": fig = px.scatter(ap, x='OffRtg', y='DefRtg', size='PIE', color='Player/Team', template="plotly_dark"); fig.update_yaxes(autorange="reversed")
                 st.plotly_chart(fig, use_container_width=True)
             st.divider(); streaks = []
             for player in p_stats.index:
-                p_games = df_active[(df_active['Player/Team'] == player) & (df_active['is_ff'] == False)]
+                p_games = df_reg[(df_reg['Player/Team'] == player) & (df_reg['is_ff'] == False)]
                 if len(p_games) >= 3:
                     avg_pts = p_stats.loc[player, 'PTS/G']; l3_avg = p_games.sort_values('Game_ID', ascending=False).head(3)['PTS'].mean()
                     if l3_avg > avg_pts * 1.20: streaks.append({"Entity": player, "Status": "🔥 HOT", "Trend": f"+{round(l3_avg - avg_pts, 1)} PPG"})
                     elif l3_avg < avg_pts * 0.80: streaks.append({"Entity": player, "Status": "❄️ COLD", "Trend": f"{round(l3_avg - avg_pts, 1)} PPG"})
             if streaks: st.table(pd.DataFrame(streaks))
+
+    # LEAGUE AVERAGES FOOTER
+    st.markdown("---")
+    st.subheader(f"📊 OTG LEAGUE AVERAGES ({sel_box})")
+    la1, la2 = st.columns(2)
+    p_avg = p_stats[['PTS/G', 'REB/G', 'AST/G', 'STL/G', 'BLK/G', 'FG%']].mean()
+    t_avg = t_stats[['PTS/G', 'REB/G', 'AST/G', 'OffRtg', 'DefRtg']].mean()
+    
+    with la1:
+        st.markdown("**👤 Player Averages**")
+        st.write(f"PPG: {p_avg['PTS/G']:.1f} | RPG: {p_avg['REB/G']:.1f} | APG: {p_avg['AST/G']:.1f} | FG%: {p_avg['FG%']:.1f}%")
+    with la2:
+        st.markdown("**🏘️ Team Averages**")
+        st.write(f"PPG: {t_avg['PTS/G']:.1f} | OffRtg: {t_avg['OffRtg']:.1f} | DefRtg: {t_avg['DefRtg']:.1f}")
 
     st.markdown('<div style="text-align: center; color: #444; padding: 30px;">© 2026 OTG STAT HUB</div>', unsafe_allow_html=True)
