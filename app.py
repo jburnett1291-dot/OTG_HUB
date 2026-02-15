@@ -82,7 +82,7 @@ def get_stats(dataframe, group):
     m['Poss/G'] = m['Poss_Raw/G']
     return m
 
-# 4. DIALOG CARDS
+# 4. DIALOG CARDS (UNCHANGED)
 @st.dialog("🏀 OTG SCOUTING REPORT", width="large")
 def show_card(name, stats_df, raw_df, is_player=True):
     row = stats_df.loc[name]
@@ -122,16 +122,19 @@ elif full_df is not None:
     tabs = st.tabs(["👤 PLAYERS", "🏘️ STANDINGS", "🔝 LEADERS", "⚔️ VERSUS", "🏆 POSTSEASON", "📖 RECORDS", "🔐 THE VAULT"])
 
     with tabs[0]:
-        p_disp = p_stats[['GP', 'PTS/G', 'REB/G', 'AST/G', 'FG%', 'TO/G', 'PIE']].sort_values('PIE', ascending=False)
+        # EXPANDED PLAYER HOME PAGE STATS
+        p_disp = p_stats[['GP', 'PTS/G', 'AST/G', 'REB/G', '3PM/G', '3PA/G', 'FGM/G', 'FGA/G', 'TO/G', 'PIE', 'FG%', 'DD/G', 'TD/G']].sort_values('PIE', ascending=False)
         sel_p = st.dataframe(p_disp, width="stretch", on_select="rerun", selection_mode="single-row")
         if len(sel_p.selection.rows) > 0: show_card(p_disp.index[sel_p.selection.rows[0]], p_stats, df_reg, True)
 
     with tabs[1]:
+        # EXPANDED TEAM HOME PAGE STATS
         t_stats['Record'] = t_stats['Win'].astype(int).astype(str) + "-" + (t_stats['GP'] - t_stats['Win']).astype(int).astype(str)
-        t_disp = t_stats.sort_values('Win', ascending=False)[['Record', 'PTS/G', 'REB/G', 'AST/G', 'TO/G', 'FG%']]
+        t_disp = t_stats.sort_values('Win', ascending=False)[['Record', 'PTS/G', 'AST/G', 'REB/G', '3PM/G', '3PA/G', 'FGM/G', 'FGA/G', 'TO/G', 'PIE', 'FG%', 'DefRtg', 'OffRtg']]
         sel_t = st.dataframe(t_disp, width="stretch", on_select="rerun", selection_mode="single-row")
         if len(sel_t.selection.rows) > 0: show_card(t_disp.index[sel_t.selection.rows[0]], t_stats, df_reg, False)
 
+    # Rest of the tabs (Leaders, Versus, Postseason, Records, Vault, Footer) remain exactly as previously updated
     with tabs[2]:
         l_cat = st.selectbox("Category", ["PTS/G", "REB/G", "AST/G", "STL/G", "BLK/G", "TO/G", "PIE"])
         t10 = p_stats.nlargest(10, l_cat)[[l_cat]]
